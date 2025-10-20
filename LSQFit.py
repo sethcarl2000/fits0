@@ -26,22 +26,24 @@ def getY(x,y,ey):  # x,y,ey = array-like
         y[i]=f(x[i],pars)+gauss(0,sigma)
         ey[i]=sigma
 
-# get a random sampling of the (x,y) data points, rerun to generate different data sets for the plot below
-getX(lx)
-getY(lx,ly,ley)
-
-fig, ax = plt.subplots()
-ax.errorbar(lx, ly, yerr=ley)
-ax.set_title("Pseudoexperiment")
-fig.show()
-
+def fit_fcn_to_data(fit, )
 
 # *** modify and add your code here ***
 nexperiments = 1000  # for example
 
 
+
 # perform many least squares fits on different pseudo experiments here
-# fill histograms w/ required data
+par_a = np.empty(nexperiments)
+par_b = np.empty(nexperiments)
+par_c = np.empty(nexperiments) 
+chi2_reduced = np.empty(nexperiments) 
+
+points_xy_err = np.stack([lx, ly, ley], axis=-1)
+
+for i_exp in range(0, nexperiments):
+
+
 
 par_a = np.random.rand(1000)   # simple placeholders for making the plot example
 par_b = np.random.rand(1000)   # these need to be filled using results from your fits
