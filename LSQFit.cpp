@@ -10,6 +10,9 @@
 #include "TStyle.h"
 #include <TMatrixD.h> 
 #include <TVectorD.h> 
+#include <cmath> 
+#include <TH2F.h> 
+#include <vector> 
 
 #include <iostream>
 using namespace std;
@@ -21,21 +24,21 @@ TRandom3* gRand=nullptr;
 //parms
 const double xmin=1;
 const double xmax=20;
-const int npoints=12;
+const int npoints=128;
 const double sigma=0.2;
 
 double f(double x){
   const double a=0.5;
   const double b=1.3;
   const double c=0.5;
-  return a+b*Log(x)+c*Log(x)*Log(x);
+  return a + b*log(x) + c*log(x)*log(x);
 }
 
 //_________________________________________________________________________________________
 void getX(double *x){
   double step=(xmax-xmin)/npoints;
   for (int i=0; i<npoints; i++){
-    x[i]=xmin+i*step;
+    x[i] = xmin + i*step;
   }
 }
 
@@ -50,11 +53,16 @@ void getY(const double *x, double *y, double *ey){
 
 // Here, the vector of std::function<double(double)> objects 
 // represents one for each term. see below for implementation. 
-vector<double> fit_fcn_to_data(
+struct FitResult_t {
+  vector<double> coeffs;  
+  double chi2; 
+};
+FitResult_t fit_fcn_to_data(
     const vector<function<double(double)>>& fcn_terms, 
-    const vector<double>& X, 
-    const vector<double>& Y,
-    const vector<double>& Y_error
+    const double *X, 
+    const double *Y, 
+    const double *Y_err,
+    const int n_pts
 );
 
 
@@ -74,6 +82,7 @@ void leastsq(){
 
 //_________________________________________________________________________________________
 int main(int argc, char **argv){
+
   TApplication theApp("App", &argc, argv); // init ROOT App for displays
 
   //initialize the TRandom3 object
@@ -104,53 +113,82 @@ int main(int argc, char **argv){
   tc->Draw();
   
   // *** modify and add your code here ***
-  auto coeffs = 
+  TH2F *h_ab    = new TH2F("h1","Parameter b vs a;a;b", 100,-0.5,1.5, 100,0.,2.5);
+  TH2F *h_ac    = new TH2F("h2","Parameter c vs a;a;c", 100,-0.25,1.25, 100,0.,1.);
+  TH2F *h_bc    = new TH2F("h3","Parameter c vs b;b;c", 100,0.,2.4, 100,0.,1.);
+  TH1F *h_chi2  = new TH1F("h4","reduced chi^2;;frequency",100,0.,2.);
 
-  TH2F *h1 = new TH2F("h1","Parameter b vs a;a;b",100,0,1,100,0,1);
-  TH2F *h2 = new TH2F("h2","Parameter c vs a;a;c",100,0,1,100,0,1);
-  TH2F *h3 = new TH2F("h3","Parameter c vs b;b;c",100,0,1,100,0,1);
-  TH1F *h4 = new TH1F("h4","reduced chi^2;;frequency",100,0,1);
+  const long int n_pseudo_exp = 1e5; 
+  vector<FitResult_t> fits; fits.reserve(n_pseudo_exp); 
+
+  // each term to fit: 
+  const vector<function<double(double)>> fit_terms{ 
+    [](double x){ return 1.; },
+    [](double x){ return log(x); },
+    [](double x){ return log(x) * log(x); }
+  }; 
 
   // perform many least squares fits on different pseudo experiments here
+  long int i=0; 
+  while (i++ < n_pseudo_exp) {
+
+    getX(lx);
+    getY(lx,ly,ley);
+
+    fits.push_back(
+      fit_fcn_to_data(fit_terms, lx, ly, ley, npoints) 
+    ); 
+  } 
   // fill histograms w/ required data
+
+  //now, fill the data
+  for (auto& fit : fits) {
+    h_ab->Fill( fit.coeffs[0], fit.coeffs[1] );
+    h_ac->Fill( fit.coeffs[0], fit.coeffs[2] ); 
+    h_bc->Fill( fit.coeffs[1], fit.coeffs[2] ); 
+    
+    h_chi2->Fill( fit.chi2 ); 
+  }
   
   TCanvas *tc2 = new TCanvas("c2","my study results",200,200,dw,dh);
   tc2->Divide(2,2);
-  tc2->cd(1); h1->Draw("colz");
-  tc2->cd(2); h2->Draw("colz");
-  tc2->cd(3); h3->Draw("colz");
-  tc2->cd(4); h4->Draw();
+  tc2->cd(1); h_ab->Draw("colz");
+  tc2->cd(2); h_ac->Draw("colz");
+  tc2->cd(3); h_bc->Draw("colz");
+  tc2->cd(4); h_chi2->Draw();
   
   tc2->Draw();
+  tc2->SaveAs(Form("fits-%i-pts.png",npoints)); 
 
   // **************************************
   
   cout << "Press ^c to exit" << endl;
-  theApp.SetIdleTimer(30,".q");  // set up a failsafe timer to end the program  
+  //theApp.SetIdleTimer(30,".q");  // set up a failsafe timer to end the program  
   theApp.Run();
 }
 
 //_________________________________________________________________________________________
-vector<double> fit_fcn_to_data(
+FitResult_t fit_fcn_to_data(
     const vector<function<double(double)>>& fcn_terms,
-    const vector<double>& X, 
-    const vector<double>& Y,
-    const vector<double>& Y_error
+    const double *X, 
+    const double *Y, 
+    const double *Y_err,
+    const int n_pts
 )
 {
     const int DoF = fcn_terms.size(); 
 
-    if (DoF < 1) return {}; 
+    if (DoF < 1) return FitResult_t{}; 
 
     double elems[DoF*DoF] = {0.}; 
     TMatrixD A(DoF, DoF, elems); 
     TVectorD B(DoF, elems); 
 
-    for (int i=0; i<X.size(); i++) {
+    for (int i=0; i<n_pts; i++) {
 
-        double x = X.at(i); 
-        double y = Y.at(i); 
-        double sigma = (Y_error.at(i) * Y_error.at(i)); 
+        double x = X[i]; 
+        double y = Y[i]; 
+        double sigma = (Y_err[i] * Y_err[i]); 
 
         vector<double> Xi; 
         for (int j=0; j<DoF; j++) Xi.push_back( (fcn_terms.at(j))(x) ); 
@@ -164,8 +202,21 @@ vector<double> fit_fcn_to_data(
     }
 
     auto coeffs = A.Invert() * B;
-    
+
     const double* coeff_data = coeffs.GetMatrixArray(); 
 
-    return vector<double>( coeff_data, coeff_data + DoF );  
+    vector<double> coeff_vec( coeff_data, coeff_data + DoF ); 
+    
+    //now, compute the chi2
+    double chi2=0.; 
+    for (int i=0; i<n_pts; i++) {
+      double model = 0.;
+      for (int j=0; j<DoF; j++) model += coeff_vec[j] * fcn_terms[j](X[i]); 
+      
+      chi2 += pow( (Y[i] - model)/Y_err[i], 2 ); 
+    }
+
+    chi2 *= 1./((double)n_pts); 
+
+    return FitResult_t{ coeff_vec, chi2 }; 
 }
