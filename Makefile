@@ -6,8 +6,9 @@ LIBS       = $(ROOTLIBS)
 GLIBS      = $(ROOTGLIBS)
 GXX	   = g++ -Wall -O3
 
-RKdemo:  LSQFit.cpp 
-	$(GXX) -o LSQFit LSQFit.cpp $(ROOTCFLAGS) $(LIBS) $(ROOTGLIBS)
+
+RKdemo: LSQFit.cpp
+	$(GXX) LSQFit.cpp -o LSQFit $(ROOTCFLAGS) $(LIBS) $(ROOTGLIBS)
 
 clean:
 	rm -f *.d *.so *.pcm LSQFit
